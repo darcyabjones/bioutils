@@ -2,13 +2,13 @@
 
 from __future__ import print_function
 
-program = "bioutils deduplicate"
+program = "bioutils translate"
 version = "0.1.0"
 author = "Darcy Jones"
 date = "1 October 2015"
 email = "darcy.ab.jones@gmail.com"
 short_blurb = (
-    "Remove duplicate sequences from a sequence file."
+    "Translates DNA sequences into amino acid sequences."
     )
 license = (
     '{program}-{version}\n'
@@ -35,12 +35,8 @@ license = license.format(**locals())
 
 import sys
 import argparse
-import re
-from collections import defaultdict
-from difflib import SequenceMatcher
 
 from Bio import SeqIO
-from Bio.SeqUtils.CheckSum import seguid
 
 ################################## Functions #################################
 
@@ -60,70 +56,24 @@ def outhandler(fp, mode='w'):
     else:
         return fp
 
-PUNCTUATION = re.compile(':|;|\||_|\s|\*|\.|-|,|\[|\]|\{|\}|\(|\)|\'|\"')
-def junk(x):
-    if PUNCTUATION.match(x) is not None:
-        return True
-    else:
-        return False
+def frame_checker(seq, frame):
+    length = len(seq)
+    return length - ((length - frame) % 3)
 
-def get_close_matches(word, possibilities, cutoff=0.6, junkfn=None):
-    matches = list()
-    for poss in possibilities:
-        match = SequenceMatcher(junkfn, word, poss)
-        if match.ratio() > cutoff:
-            matches.append(poss)
-    return matches
-
-def get_unique(seqids, cutoff=0.6, junkfn=None):
-    if len(seqids) < 2:
-        return seqids
-
-    matches = get_close_matches(
-        seqids[0],
-        seqids[1:],
-        cutoff=cutoff,
-        junkfn=junkfn,
-        )
-
-    seqids = seqids[:1] + [s for s in seqids[1:] if s not in matches]
-    if len(seqids) > 2:
-        return seqids[0] + get_unique(seqids[1:], cutoff=cutoff, junkfn=junkfn)
-    else:
-        return seqids
 
 
 #################################### Main ####################################
 
-def main(infile, outfile, match_id=True, cutoff=0.6, fmt='fasta'):
-    with inhandler(infile) as inhandle:
-        checksums = defaultdict(list)
-        new_seqs = dict()
+def main(infile, outfile, frame=0, fmt='fasta'):
+    with inhandler(infile) as inhandle, outhandler(outfile) as outhandle:
+        trseqs = list()
         seqs = SeqIO.parse(inhandle, format=fmt)
         for seq in seqs:
-            new_seqs[seq.id] = seq
-            sgid = seguid(seq.seq)
-            checksums[sgid].append(seq.id)
-        seqs = new_seqs
-
-    keep = list()
-    for sgid, seqids in checksums.items():
-        if match_id:
-            keep.extend(get_unique(
-                seqids,
-                cutoff=cutoff,
-                junkfn=junk,
-                ))
-        else:
-            keep.append(seqids[0])
-
-    with outhandler(outfile) as outhandle:
-        new_seqs = list()
-        for seqid in keep:
-            new_seqs.append(seqs[seqid])
-        SeqIO.write(new_seqs, outfile, format=fmt)
+            new_seq = seq.seq[frame: frame_checker(seq, frame)]
+            seq.seq = new_seq.translate()
+            trseqs.append(seq)
+        SeqIO.write(trseqs, outhandle, format=fmt)
     return
-
 
 if __name__== '__main__':
     arg_parser = argparse.ArgumentParser(
@@ -131,7 +81,7 @@ if __name__== '__main__':
         description=license,
         epilog=(
             'Example usage:\n'
-            '$ %(prog)s -i my_fasta.fna -o my_fasta.faa\n'
+            '$ %(prog)s -i my_fasta.fna -o my_fasta.faa --frame 1\n'
             )
         )
     arg_parser.add_argument(
@@ -163,17 +113,10 @@ if __name__== '__main__':
         help="The format of the sequences. Default is 'fasta'."
         )
     arg_parser.add_argument(
-        "-m", "--no-id",
-        dest='match_id',
-        default=True,
-        action='store_false',
-        help="",
-        )
-    arg_parser.add_argument(
-        "-c", "--cutoff",
-        default=0.6,
-        type=float,
-        help="",
+        "-r", "--frame",
+        type=int,
+        default=0,
+        help="Frame to start translating from. Default is 0 (first base).",
         )
     arg_parser.add_argument(
         '--version',

@@ -2,13 +2,13 @@
 
 from __future__ import print_function
 
-program = "bioutils deduplicate"
+program = "bioutils convert"
 version = "0.1.0"
 author = "Darcy Jones"
 date = "1 October 2015"
 email = "darcy.ab.jones@gmail.com"
 short_blurb = (
-    "Remove duplicate sequences from a sequence file."
+    "Converts sequences between file formats."
     )
 license = (
     '{program}-{version}\n'
@@ -35,12 +35,11 @@ license = license.format(**locals())
 
 import sys
 import argparse
-import re
-from collections import defaultdict
-from difflib import SequenceMatcher
 
 from Bio import SeqIO
-from Bio.SeqUtils.CheckSum import seguid
+from Bio.Alphabet import generic_dna
+from Bio.Alphabet import generic_rna
+from Bio.Alphabet import generic_protein
 
 ################################## Functions #################################
 
@@ -60,70 +59,24 @@ def outhandler(fp, mode='w'):
     else:
         return fp
 
-PUNCTUATION = re.compile(':|;|\||_|\s|\*|\.|-|,|\[|\]|\{|\}|\(|\)|\'|\"')
-def junk(x):
-    if PUNCTUATION.match(x) is not None:
-        return True
-    else:
-        return False
-
-def get_close_matches(word, possibilities, cutoff=0.6, junkfn=None):
-    matches = list()
-    for poss in possibilities:
-        match = SequenceMatcher(junkfn, word, poss)
-        if match.ratio() > cutoff:
-            matches.append(poss)
-    return matches
-
-def get_unique(seqids, cutoff=0.6, junkfn=None):
-    if len(seqids) < 2:
-        return seqids
-
-    matches = get_close_matches(
-        seqids[0],
-        seqids[1:],
-        cutoff=cutoff,
-        junkfn=junkfn,
-        )
-
-    seqids = seqids[:1] + [s for s in seqids[1:] if s not in matches]
-    if len(seqids) > 2:
-        return seqids[0] + get_unique(seqids[1:], cutoff=cutoff, junkfn=junkfn)
-    else:
-        return seqids
-
+alphabets = {
+    'dna': generic_dna,
+    'rna': generic_rna,
+    'aa': generic_protein,
+    }
 
 #################################### Main ####################################
 
-def main(infile, outfile, match_id=True, cutoff=0.6, fmt='fasta'):
-    with inhandler(infile) as inhandle:
-        checksums = defaultdict(list)
-        new_seqs = dict()
-        seqs = SeqIO.parse(inhandle, format=fmt)
-        for seq in seqs:
-            new_seqs[seq.id] = seq
-            sgid = seguid(seq.seq)
-            checksums[sgid].append(seq.id)
-        seqs = new_seqs
-
-    keep = list()
-    for sgid, seqids in checksums.items():
-        if match_id:
-            keep.extend(get_unique(
-                seqids,
-                cutoff=cutoff,
-                junkfn=junk,
-                ))
-        else:
-            keep.append(seqids[0])
-
-    with outhandler(outfile) as outhandle:
-        new_seqs = list()
-        for seqid in keep:
-            new_seqs.append(seqs[seqid])
-        SeqIO.write(new_seqs, outfile, format=fmt)
+def main(infile, outfile, fromfmt='fasta', tofmt='fasta', alphabet='dna'):
+    with inhandler(infile) as inhandle, outhandler(outfile) as outhandle:
+        SeqIO.convert(
+            inhandle,
+            fromfmt,
+            outhandle,
+            tofmt,
+            alphabet=alphabets[alphabet]
+            )
     return
-
 
 if __name__== '__main__':
     arg_parser = argparse.ArgumentParser(
@@ -131,7 +84,7 @@ if __name__== '__main__':
         description=license,
         epilog=(
             'Example usage:\n'
-            '$ %(prog)s -i my_fasta.fna -o my_fasta.faa\n'
+            '$ %(prog)s -i my_fasta.fna -o my_fasta.gbk --from fasta --to genbank --alphabet dna\n'
             )
         )
     arg_parser.add_argument(
@@ -139,7 +92,7 @@ if __name__== '__main__':
         default=sys.stdin,
         type=argparse.FileType('r'),
         help=(
-            "Path to the input file. "
+            "Path to the input file."
             "Default is stdin."
             )
         )
@@ -148,31 +101,34 @@ if __name__== '__main__':
         default=sys.stdout,
         type=argparse.FileType('w'),
         help=(
-            "Path to write output to. "
+            "Path to write output to."
             "Default is stdout."
             )
         )
     arg_parser.add_argument(
-        "-f", "--format",
-        dest='fmt',
+        "-f", "--from",
+        dest='fromfmt',
         default='fasta',
         choices=[
             'fasta', 'embl', 'genbank', 'pir',
             'seqxml', 'swiss', 'tab', 'uniprot-xml'
             ],
-        help="The format of the sequences. Default is 'fasta'."
+        help="The format of the input sequence. Default is 'fasta'."
         )
     arg_parser.add_argument(
-        "-m", "--no-id",
-        dest='match_id',
-        default=True,
-        action='store_false',
-        help="",
+        "-t", "--to",
+        dest='tofmt',
+        default='fasta',
+        choices=[
+            'fasta', 'embl', 'genbank', 'pir',
+            'seqxml', 'swiss', 'tab', 'uniprot-xml'
+            ],
+        help="The format of the output sequence. Default is 'fasta'."
         )
     arg_parser.add_argument(
-        "-c", "--cutoff",
-        default=0.6,
-        type=float,
+        "-a", "--alphabet",
+        choices=['dna', 'rna', 'aa'],
+        default='dna',
         help="",
         )
     arg_parser.add_argument(
