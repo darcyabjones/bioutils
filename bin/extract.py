@@ -144,7 +144,7 @@ def subfeatures(feature):
     return new_features
 
 
-def main(infile, gff, outfile, ftype='CDS', translate=False):
+def main(infile, gff, outfile, ftype='CDS', use_phase=False, translate=False):
     with inhandler(infile) as handle:
         ref_seq = SeqIO.to_dict(SeqIO.parse(handle, format="fasta"))
     # Parse GFF annotations.
@@ -174,19 +174,26 @@ def main(infile, gff, outfile, ftype='CDS', translate=False):
         for feature in sequence.features:
             if feature.type != ftype:
                 continue
-
-            fseq = feature.extract(sequence)
-            fseq.id = feature.id
-            fseq.name = feature.id
             start = feature.location.start
             end = feature.location.end
+            phase = int(feature.qualifiers['phase'][0])
             strand = feature.location.strand
+
+            if use_phase:
+                fseq = feature.extract(sequence)[phase:]
+            else:
+                fseq = feature.extract(sequence)
+
+            fseq.id = feature.id
+            fseq.name = feature.id
+
             strand = '-' if strand == -1 else '+'
-            fseq.description = "{}:{}-{}[{}]".format(
+            fseq.description = "{}:{}-{}[{}]{}".format(
                 scaffold,
                 start,
                 end,
-                strand
+                strand,
+                phase
                 )
             if translate:
                 tseq = fseq.seq.translate()
@@ -239,7 +246,7 @@ if __name__== '__main__':
         default='CDS',
         help=(
             "The type of features to extract sequences from."
-            "Default is 'CDS'".
+            "Default is 'CDS'."
             ),
         )
     arg_parser.add_argument(
@@ -247,6 +254,13 @@ if __name__== '__main__':
         default=False,
         action='store_true',
         help="Translate sequences."
+        )
+    arg_parser.add_argument(
+        "-a", "--phase",
+        dest='use_phase',
+        default=False,
+        action='store_true',
+        help="Use phase information."
         )
     arg_parser.add_argument(
         '--version',
