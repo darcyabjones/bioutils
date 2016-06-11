@@ -2,6 +2,19 @@
 
 from __future__ import print_function
 
+import os
+from os.path import split as psplit
+from os.path import splitext as splitext
+import re
+import argparse
+import sys
+from collections import defaultdict
+
+from Bio import SeqIO
+from Bio.SeqFeature import SeqFeature
+from Bio.SeqFeature import CompoundLocation
+from BCBio import GFF
+
 program = "extract_features"
 version = "0.1.0"
 author = "Darcy Jones"
@@ -31,38 +44,8 @@ license = (
 
 license = license.format(**locals())
 
-############################ Import all modules ##############################
 
-import os
-from os.path import split as psplit
-from os.path import splitext as splitext
-import re
-import argparse
-import sys
-from collections import defaultdict
-
-from Bio import SeqIO
-from Bio.SeqFeature import SeqFeature
-from Bio.SeqFeature import CompoundLocation
-from BCBio import GFF
-
-################################## Classes ###################################
-
-def inhandler(fp, mode='r'):
-    if fp == sys.stdin or fp == '-':
-        return sys.stdin
-    elif isinstance(fp, str):
-        return open(fp, mode)
-    else:
-        return fp
-
-def outhandler(fp, mode='w'):
-    if fp == sys.stdout or fp == '-':
-        return sys.stdout
-    elif isinstance(fp, str):
-        return open(fp, mode)
-    else:
-        return fp
+"################################# Classes ##################################"
 
 
 def subfeatures(feature):
@@ -99,20 +82,26 @@ def subfeatures(feature):
 
     strand = feature.strand
     if len(sub_features_exons) > 0:
-        sub_features_exons.sort(key=lambda l: l.location.start)
-        locations = [f.location for f in sub_features_exons]
-        if strand == -1:
-            """ When calling CompoundLocation.extract() the sequences are
-            extracted in the order that they are encountered. For features on
-            the - strand, we need to reverse this order. """
-            locations.reverse()
+        if len(sub_features_cds) > 1:
+            sub_features_exons.sort(key=lambda l: l.location.start)
+            locations = [f.location for f in sub_features_exons]
+            if strand == -1:
+                """ When calling CompoundLocation.extract() the sequences are
+                extracted in the order that they are encountered. For features
+                on the - strand, we need to reverse this order. """
+                locations.reverse()
+            locations = CompoundLocation(locations)
+        else:
+            # One CDS returns an ExactLocation
+            locations = sub_features_exons[0].location
+
         qualifiers = sub_features_exons[0].qualifiers
         sub_feature = SeqFeature(
             id=sub_features_exons[0].id,
-            type="CDS",
+            type="exon",
             strand=strand,
             qualifiers=qualifiers,
-            location=CompoundLocation(locations)
+            location=locations
             )
         new_features.append(sub_feature)
 
@@ -145,29 +134,27 @@ def subfeatures(feature):
 
 
 def main(infile, gff, outfile, ftype='CDS', use_phase=False, translate=False):
-    with inhandler(infile) as handle:
-        ref_seq = SeqIO.to_dict(SeqIO.parse(handle, format="fasta"))
+    ref_seq = SeqIO.to_dict(SeqIO.parse(infile, format="fasta"))
     # Parse GFF annotations.
 
-    with inhandler(gff) as handle:
-        genome_with_features = GFF.parse(
-            handle,
-            base_dict=ref_seq
-            )
-        """ bcbio-gff codes exons, mRNA etc as subfeatures which is now
-        depreciated in biopython, this code fixes that issue. """
-        new_genome_with_features = list()
-        for scaffold in genome_with_features:
-            new_features = list()
-            for feature in scaffold.features:
-                gene_features = subfeatures(feature)
-                new_features.extend(gene_features)
-            scaffold.features = new_features
-            new_genome_with_features.append(scaffold)
-        """ Genome with features doesn't have scaffolds without any gff
-        features. Here I update the existing records in genome with the
-        new ones containing features. """
-        ref_seq.update(SeqIO.to_dict(new_genome_with_features))
+    genome_with_features = GFF.parse(
+        gff,
+        base_dict=ref_seq
+        )
+    """ bcbio-gff codes exons, mRNA etc as subfeatures which is now
+    depreciated in biopython, this code fixes that issue. """
+    new_genome_with_features = list()
+    for scaffold in genome_with_features:
+        new_features = list()
+        for feature in scaffold.features:
+            gene_features = subfeatures(feature)
+            new_features.extend(gene_features)
+        scaffold.features = new_features
+        new_genome_with_features.append(scaffold)
+    """ Genome with features doesn't have scaffolds without any gff
+    features. Here I update the existing records in genome with the
+    new ones containing features. """
+    ref_seq.update(SeqIO.to_dict(new_genome_with_features))
 
     sequences = list()
     for scaffold, sequence in ref_seq.items():
@@ -176,7 +163,10 @@ def main(infile, gff, outfile, ftype='CDS', use_phase=False, translate=False):
                 continue
             start = feature.location.start
             end = feature.location.end
-            phase = int(feature.qualifiers['phase'][0])
+            try:
+                phase = int(feature.qualifiers['phase'][0])
+            except KeyError:
+                phase = 0
             strand = feature.location.strand
 
             if use_phase:
@@ -188,25 +178,23 @@ def main(infile, gff, outfile, ftype='CDS', use_phase=False, translate=False):
             fseq.name = feature.id
 
             strand = '-' if strand == -1 else '+'
-            fseq.description = "{}:{}-{}[{}]{}".format(
+            fseq.description = "{}:{}-{}[{}]".format(
                 scaffold,
                 start,
                 end,
                 strand,
-                phase
                 )
             if translate:
                 tseq = fseq.seq.translate()
                 fseq.seq = tseq
             sequences.append(fseq)
 
-    with outhandler(outfile) as handle:
-        SeqIO.write(sequences, handle, 'fasta')
+    SeqIO.write(sequences, outfile, 'fasta')
     return
 
-############################ Argument Handling ###############################
+"########################### Argument Handling ##############################"
 
-if __name__== '__main__':
+if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=license,
@@ -228,7 +216,8 @@ if __name__== '__main__':
         help=(
             "Path to the GFF file."
             "Default is stdin.\n"
-            "Note that only one of 'infile' and 'gff' can take input from stdin."
+            "Note that only one of 'infile' and "
+            "'gff' can take input from stdin."
             ),
         )
     arg_parser.add_argument(

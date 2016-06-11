@@ -2,6 +2,15 @@
 
 from __future__ import print_function
 
+import os
+from os.path import split as psplit
+from os.path import splitext as splitext
+import re
+import argparse
+import sys
+from collections import defaultdict
+import json
+
 program = "bioutils code"
 version = "0.1.0"
 author = "Darcy Jones"
@@ -9,8 +18,10 @@ date = "1 October 2015"
 email = "darcy.ab.jones@gmail.com"
 short_blurb = (
     'Renames fasta sequences.\n'
-    'Codes sequence IDs as g followed by an integer left-filled with zeros (e.g. g0001, g0002).\n'
-    'Can replace original sequence IDs from coded output using a simple regular expression system.'
+    'Codes sequence IDs as g followed by an integer left-filled with zeros '
+    '(e.g. g0001, g0002).\n'
+    'Can replace original sequence IDs from coded output using a simple '
+    'regular expression system.'
     )
 license = (
     '{program}-{version}\n'
@@ -33,35 +44,9 @@ license = (
 
 license = license.format(**locals())
 
-############################ Import all modules ##############################
 
-import os
-from os.path import split as psplit
-from os.path import splitext as splitext
-import re
-import argparse
-import sys
-from collections import defaultdict
-import json
+"################################# Classes ##################################"
 
-################################## Classes ###################################
-
-
-def inhandler(fp, mode='r'):
-    if fp == sys.stdin or fp == '-':
-        return sys.stdin
-    elif isinstance(fp, str):
-        return open(fp, mode)
-    else:
-        return fp
-
-def outhandler(fp, mode='w'):
-    if fp == sys.stdout or fp == '-':
-        return sys.stdout
-    elif isinstance(fp, str):
-        return open(fp, mode)
-    else:
-        return fp
 
 def main(infile, outfile, json_file, fmt, length, decode=False):
     if not decode:
@@ -103,9 +88,9 @@ def main(infile, outfile, json_file, fmt, length, decode=False):
                     outhandle.write(line + '\n')
     return
 
-############################ Argument Handling ###############################
+"########################### Argument Handling ##############################"
 
-if __name__== '__main__':
+if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=license,
@@ -113,14 +98,19 @@ if __name__== '__main__':
             'Example usage:'
             '\n'
             '$ %(prog)s -i my_fasta.fa -o my_fasta.coded.fa -j ./codes.json\n'
-            '$ annoyingprogram --in my_fasta.coded.fa --out my_output.coded.dat\n'
-            '$ %(prog)s -i my_output.coded.dat -o my_output.dat -j ./codes.json --decode\n'
+            '$ annoyingprogram --in my_fasta.coded.fa --out '
+            'my_output.coded.dat\n'
+            '$ %(prog)s -i my_output.coded.dat -o my_output.dat '
+            '-j ./codes.json --decode\n'
             '\n'
-            'Note: Currently you can\'t have the coding and decoding steps in the same piped-chain e.g.:\n'
+            'Note: Currently you can\'t have the coding and decoding '
+            'steps in the same piped-chain e.g.:\n'
             '\n'
-            '$ %(prog)s -i my_fasta.fa | annoyingprogram | %(prog)s -o my_output.dat --decode \n'
+            '$ %(prog)s -i my_fasta.fa | annoyingprogram | '
+            '%(prog)s -o my_output.dat --decode \n'
             '\n'
-            'Would give an error because the decoding step is trying to read the JSON before it is written. '
+            'Would give an error because the decoding step is trying '
+            'to read the JSON before it is written. '
             'Try using an intermediate file instead.\n'
             )
         )
@@ -157,7 +147,8 @@ if __name__== '__main__':
         default='fasta',
         choices=[
             'fasta', 'embl', 'genbank', 'pir',
-            'seqxml', 'swiss', 'tab', 'uniprot-xml'
+            'seqxml', 'swiss', 'tab', 'uniprot-xml',
+            'json',
             ],
         help="The format of the sequences. Default is 'fasta'."
         )
